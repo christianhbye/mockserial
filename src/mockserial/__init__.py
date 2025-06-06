@@ -1,1 +1,1 @@
-from .core import MockSerial
+from mock_serial import MockSerial

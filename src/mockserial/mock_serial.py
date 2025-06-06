@@ -8,11 +8,52 @@ class MockSerial:
     Serial class.
     """
 
-    def __init__(self):
+    def __init__(self, peer=None, timeout=None):
+        """
+        Initialize the MockSerial instance.
+
+        Parameters
+        ----------
+        peer : MockSerial
+            The peer MockSerial instance to which this instance will
+            be connected. If None, this instance will not be connected
+            to any other instance.
+        timeout : float, optional
+            The timeout for read operations. If None, read operations
+            will block indefinitely.
+        
+        """
         self._read_buffer = bytearray()
         self._lock = threading.Lock()
-        self.peer = None
-        self.timeout = None
+        self.timeout = timeout
+        if peer:
+            self.add_peer(peer)
+
+    def add_peer(self, peer):
+        """
+        Add a peer MockSerial instance to this instance, and
+        make this instance the peer of the given instance.
+
+        Parameters
+        ----------
+        peer : MockSerial
+            The peer MockSerial instance to connect to.
+
+        Raises
+        -------
+        TypeError
+            If the peer is not an instance of MockSerial.
+
+        ValueError
+            If the peer is already connected to another instance.
+
+        """
+        if not isinstance(peer, MockSerial):
+            raise TypeError("Peer must be an instance of MockSerial")
+        if peer.peer is not None:
+            raise ValueError("Peer is already connected to another instance")
+        self.peer = peer
+        peer.peer = self
 
     def write(self, data):
         """
@@ -131,3 +172,24 @@ class MockSerial:
         Close the serial port.
         """
         self.peer = None
+
+def create_serial_connection(timeout=None):
+    """
+    Create a mock serial connection between two MockSerial instances.
+
+    Parameters
+    ----------
+    timeout : float
+        The timeout for read operations. If specified, it will be set
+        on both MockSerial instances.
+
+    Returns
+    -------
+    MockSerial, MockSerial
+        A pair of new instances of MockSerial, that can communicate
+        with each other.
+
+    """
+    s1 = MockSerial(timeout=timeout)
+    s2 = MockSerial(peer=s1, timeout=timeout)
+    return s1, s2
