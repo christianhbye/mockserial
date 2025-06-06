@@ -21,13 +21,51 @@ class MockSerial:
         timeout : float, optional
             The timeout for read operations. If None, read operations
             will block indefinitely.
-        
+
         """
         self._read_buffer = bytearray()
         self._lock = threading.Lock()
         self.timeout = timeout
         if peer:
             self.add_peer(peer)
+        else:
+            self.peer = None
+
+    def __eq__(self, other):
+        """
+        Check if two MockSerial instances are equal. They are considered
+        equal if they are connected to the same peer.
+
+        Parameters
+        ----------
+        other : MockSerial
+            The other MockSerial instance to compare with.
+
+        Returns
+        -------
+        bool
+            True if both instances are connected to the same peer,
+            False otherwise.
+
+        """
+        return isinstance(other, MockSerial) and self.peer is other.peer
+
+    @property
+    def is_open(self):
+        """
+        Check if the serial port is open. It is considered open if
+        it has a peer connected.
+
+        Returns
+        -------
+        bool
+            True if the serial port is open, False otherwise.
+
+        """
+        try:
+            return self.peer is not None
+        except AttributeError:
+            return False
 
     def add_peer(self, peer):
         """
@@ -45,9 +83,14 @@ class MockSerial:
             If the peer is not an instance of MockSerial.
 
         ValueError
-            If the peer is already connected to another instance.
+            If the peer is already connected to another instance or
+            this instance is already connected to a peer.
 
         """
+        if self.is_open:
+            if self.peer is peer:
+                return
+            raise ValueError("This instance is already connected to a peer")
         if not isinstance(peer, MockSerial):
             raise TypeError("Peer must be an instance of MockSerial")
         if peer.peer is not None:
@@ -171,7 +214,10 @@ class MockSerial:
         """
         Close the serial port.
         """
-        self.peer = None
+        if self.is_open:
+            self.peer.peer = None
+            self.peer = None
+
 
 def create_serial_connection(timeout=None):
     """
