@@ -1,1 +1,1 @@
-from mock_serial import MockSerial, create_serial_connection
+from .mock_serial import MockSerial, create_serial_connection
