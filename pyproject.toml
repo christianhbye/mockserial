@@ -28,5 +28,16 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = [
+  "--cov=mockserial",
+  "--cov-report=term-missing",
+  "--cov-report=xml",
+  "--junitxml=junit.xml",
+  "-o junit_family=legacy",
+]
+
 [tool.black]
 line-length = 79
