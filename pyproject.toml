@@ -19,6 +19,8 @@ classifiers = [
 
 [project.optional-dependencies]
 dev = [
+  "build",
+  "twine",
   "black",
   "flake8",
   "pytest",
