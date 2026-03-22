@@ -3,7 +3,7 @@ requires = ["setuptools>=65", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mockserial"
+name = "pyserial-mock"
 version = "0.0.1"
 description = "A mock serial instance for testing purposes"
 readme = "README.md"
