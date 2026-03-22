@@ -1,6 +1,7 @@
-*.egg-info
-*__pycache__/
+*.egg-info/
+__pycache__/
 build/
+dist/
 
 .coverage
 *.xml

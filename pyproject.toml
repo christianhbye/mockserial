@@ -9,7 +9,7 @@ description = "A mock serial instance for testing purposes"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [{ name="Christian Hellum Bye", email="chbye@berkeley.edu" }]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 classifiers = [
   "Intended Audience :: Developers",
   "License :: OSI Approved :: MIT License",
@@ -17,12 +17,10 @@ classifiers = [
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-  "build",
-  "twine",
-  "black",
-  "flake8",
+  "ruff",
+  "pre-commit",
   "pytest",
   "pytest-cov",
 ]
@@ -41,5 +39,11 @@ addopts = [
   "-o junit_family=legacy",
 ]
 
-[tool.black]
+[tool.ruff]
 line-length = 79
+
+[tool.ruff.lint]
+extend-ignore = ["E203"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/*/__init__.py" = ["F401"]
