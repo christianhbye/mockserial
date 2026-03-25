@@ -5,6 +5,7 @@ import time
 from mockserial import (
     MockSerial,
     SerialException,
+    SerialTimeoutException,
     create_serial_connection,
 )
 
@@ -269,3 +270,56 @@ def test_create_serial_connection_kwargs():
     assert s1.baudrate == 115200
     assert s2.baudrate == 115200
     assert s1.timeout == 1.0
+
+
+def test_flush_simulated_timing():
+    """flush() delays proportionally to bytes and baudrate."""
+    s1, s2 = create_serial_connection(baudrate=9600, simulate_timing=True)
+    # 960 bytes at 9600 baud, 10 bits/byte = 1.0 second
+    s1.write(b"\x00" * 960)
+    tstart = time.time()
+    s1.flush()
+    elapsed = time.time() - tstart
+    assert elapsed >= 0.9
+    assert elapsed < 1.5
+
+
+def test_flush_no_timing_is_noop():
+    """Default flush() is instant (simulate_timing=False)."""
+    s1, s2 = create_serial_connection()
+    s1.write(b"\x00" * 960)
+    tstart = time.time()
+    s1.flush()
+    elapsed = time.time() - tstart
+    assert elapsed < 0.1
+
+
+def test_write_timeout():
+    """write_timeout raises SerialTimeoutException."""
+    s1, s2 = create_serial_connection(
+        baudrate=9600,
+        write_timeout=0.1,
+        simulate_timing=True,
+    )
+    # 960 bytes at 9600 baud = ~1s, exceeds 0.1s timeout
+    with pytest.raises(SerialTimeoutException):
+        s1.write(b"\x00" * 960)
+
+
+def test_write_timeout_without_simulate_timing():
+    """write_timeout is ignored when simulate_timing=False."""
+    s1, s2 = create_serial_connection(baudrate=9600, write_timeout=0.001)
+    # Should not raise even though data exceeds timeout
+    s1.write(b"\x00" * 960)
+
+
+def test_flush_resets_pending():
+    """flush() resets pending byte counter."""
+    s1, s2 = create_serial_connection(baudrate=115200, simulate_timing=True)
+    s1.write(b"\x00" * 100)
+    s1.flush()
+    # Second flush should be instant (no pending bytes)
+    tstart = time.time()
+    s1.flush()
+    elapsed = time.time() - tstart
+    assert elapsed < 0.05
