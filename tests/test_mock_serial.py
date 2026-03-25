@@ -2,7 +2,11 @@ import pytest
 import threading
 import time
 
-from mockserial import MockSerial, create_serial_connection
+from mockserial import (
+    MockSerial,
+    SerialException,
+    create_serial_connection,
+)
 
 
 def test_add_peer():
@@ -44,7 +48,10 @@ def test_add_peer():
 
 def test_write_no_peer():
     serial = MockSerial()
-    with pytest.raises(RuntimeError):
+    with pytest.raises(SerialException):
+        serial.write(b"Hello")
+    # SerialException inherits IOError, matching pySerial
+    with pytest.raises(IOError):
         serial.write(b"Hello")
 
 
@@ -185,3 +192,80 @@ def test_readline_cumulative_timeout():
     assert result == b"no newline here"
     assert elapsed >= 0.2
     assert elapsed < 0.5  # must NOT be 0.2 * 15 = 3.0
+
+
+def test_constructor_pyserial_signature():
+    """MockSerial accepts all pySerial Serial kwargs."""
+    s = MockSerial(
+        port="/dev/ttyUSB0",
+        baudrate=115200,
+        bytesize=8,
+        parity="N",
+        stopbits=1,
+        timeout=1.0,
+        xonxoff=False,
+        rtscts=False,
+        write_timeout=2.0,
+        dsrdtr=False,
+        inter_byte_timeout=0.01,
+        exclusive=True,
+    )
+    assert s.port == "/dev/ttyUSB0"
+    assert s.name == "/dev/ttyUSB0"
+    assert s.baudrate == 115200
+    assert s.write_timeout == 2.0
+    assert not s.is_open
+
+
+def test_backward_compat_constructor():
+    """Existing code using MockSerial(timeout=0.5) still works."""
+    s = MockSerial(timeout=0.5)
+    assert s.timeout == 0.5
+    assert s.baudrate == 9600  # default
+
+
+def test_backward_compat_peer_kwarg():
+    """MockSerial(peer=s1, timeout=0.5) still works."""
+    s1 = MockSerial()
+    s2 = MockSerial(peer=s1, timeout=0.5)
+    assert s2.peer is s1
+    assert s1.peer is s2
+
+
+def test_context_manager():
+    """MockSerial supports with-statement."""
+    s1, s2 = create_serial_connection()
+    with s1 as s:
+        assert s is s1
+        assert s.is_open
+        s.write(b"hello")
+    assert not s1.is_open
+    assert not s2.is_open
+
+
+def test_close_thread_safety():
+    """close() must not crash if called during read."""
+    s1, s2 = create_serial_connection(timeout=0.1)
+    errors = []
+
+    def reader():
+        try:
+            for _ in range(20):
+                s2.read(1)
+        except Exception as e:
+            errors.append(e)
+
+    t = threading.Thread(target=reader)
+    t.start()
+    time.sleep(0.02)
+    s1.close()
+    t.join(timeout=5)
+    assert len(errors) == 0
+
+
+def test_create_serial_connection_kwargs():
+    """create_serial_connection forwards kwargs to MockSerial."""
+    s1, s2 = create_serial_connection(timeout=1.0, baudrate=115200)
+    assert s1.baudrate == 115200
+    assert s2.baudrate == 115200
+    assert s1.timeout == 1.0

@@ -1,6 +1,29 @@
 import threading
 import time
 
+try:
+    from serial import (
+        EIGHTBITS,
+        PARITY_NONE,
+        STOPBITS_ONE,
+        SerialException,
+        SerialTimeoutException,
+    )
+except ImportError:
+    EIGHTBITS = 8
+    PARITY_NONE = "N"
+    STOPBITS_ONE = 1
+
+    class SerialException(IOError):
+        """Fallback when pyserial is not installed."""
+
+        pass
+
+    class SerialTimeoutException(SerialException):
+        """Fallback when pyserial is not installed."""
+
+        pass
+
 
 class MockSerial:
     """
@@ -8,24 +31,77 @@ class MockSerial:
     Serial class.
     """
 
-    def __init__(self, peer=None, timeout=None):
+    def __init__(
+        self,
+        port=None,
+        baudrate=9600,
+        bytesize=EIGHTBITS,
+        parity=PARITY_NONE,
+        stopbits=STOPBITS_ONE,
+        timeout=None,
+        xonxoff=False,
+        rtscts=False,
+        write_timeout=None,
+        dsrdtr=False,
+        inter_byte_timeout=None,
+        exclusive=None,
+        *,
+        peer=None,
+    ):
         """
         Initialize the MockSerial instance.
 
+        Accepts the same parameters as pySerial's ``Serial`` class.
+        Hardware-level settings (baudrate, parity, etc.) are stored
+        as attributes but do not affect mock behaviour.
+
         Parameters
         ----------
-        peer : MockSerial
-            The peer MockSerial instance to which this instance will
-            be connected. If None, this instance will not be connected
-            to any other instance.
+        port : str, optional
+            Port name (stored but not used).
+        baudrate : int
+            Baud rate (stored, used by simulated timing).
+        bytesize : int
+            Number of data bits (stored).
+        parity : str
+            Parity setting (stored).
+        stopbits : float
+            Number of stop bits (stored).
         timeout : float, optional
-            The timeout for read operations. If None, read operations
-            will block indefinitely.
+            The timeout for read operations. If None, read
+            operations will block indefinitely.
+        xonxoff : bool
+            Software flow control (stored).
+        rtscts : bool
+            Hardware (RTS/CTS) flow control (stored).
+        write_timeout : float, optional
+            Timeout for write operations (stored).
+        dsrdtr : bool
+            Hardware (DSR/DTR) flow control (stored).
+        inter_byte_timeout : float, optional
+            Inter-byte timeout (stored).
+        exclusive : bool, optional
+            Exclusive access mode (stored).
+        peer : MockSerial, optional
+            Keyword-only. The peer MockSerial instance to
+            connect to.
 
         """
+        self.port = port
+        self.name = port
+        self.baudrate = baudrate
+        self.bytesize = bytesize
+        self.parity = parity
+        self.stopbits = stopbits
+        self.timeout = timeout
+        self.xonxoff = xonxoff
+        self.rtscts = rtscts
+        self.write_timeout = write_timeout
+        self.dsrdtr = dsrdtr
+        self.inter_byte_timeout = inter_byte_timeout
+        self.exclusive = exclusive
         self._read_buffer = bytearray()
         self._lock = threading.Lock()
-        self.timeout = timeout
         if peer:
             self.add_peer(peer)
         else:
@@ -114,14 +190,15 @@ class MockSerial:
 
         Raises
         -------
-        RuntimeError
+        SerialException
             If the serial port is not open.
 
         """
-        if not self.peer:
-            raise RuntimeError("Serial port is not open")
-        with self.peer._lock:
-            self.peer._read_buffer.extend(data)
+        peer = self.peer
+        if peer is None:
+            raise SerialException("Serial port is not open")
+        with peer._lock:
+            peer._read_buffer.extend(data)
         return len(data)
 
     def read(self, size=1):
@@ -229,13 +306,30 @@ class MockSerial:
     def close(self):
         """
         Close the serial port.
+
+        Thread-safe: acquires both peers' locks in a consistent
+        order (by ``id``) to prevent deadlocks.
         """
-        if self.is_open:
-            self.peer.peer = None
-            self.peer = None
+        if not self.is_open:
+            return
+        peer = self.peer
+        if peer is None:
+            return
+        first, second = sorted([self, peer], key=id)
+        with first._lock:
+            with second._lock:
+                self.peer = None
+                peer.peer = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
 
 
-def create_serial_connection(timeout=None):
+def create_serial_connection(timeout=None, **kwargs):
     """
     Create a mock serial connection between two MockSerial instances.
 
@@ -244,6 +338,8 @@ def create_serial_connection(timeout=None):
     timeout : float
         The timeout for read operations. If specified, it will be set
         on both MockSerial instances.
+    **kwargs
+        Additional keyword arguments passed to ``MockSerial``.
 
     Returns
     -------
@@ -252,6 +348,6 @@ def create_serial_connection(timeout=None):
         with each other.
 
     """
-    s1 = MockSerial(timeout=timeout)
-    s2 = MockSerial(peer=s1, timeout=timeout)
+    s1 = MockSerial(timeout=timeout, **kwargs)
+    s2 = MockSerial(timeout=timeout, peer=s1, **kwargs)
     return s1, s2
