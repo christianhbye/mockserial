@@ -147,12 +147,11 @@ class MockSerial:
                     data = self._read_buffer[:size]
                     self._read_buffer = self._read_buffer[size:]
                     return bytes(data)
-            if self.timeout is not None:
-                elapsed = time.time() - tstart
-                if elapsed >= self.timeout:
-                    data = self._read_buffer[:]  # less than requested
-                    self._read_buffer.clear()
-                    return bytes(data)
+                if self.timeout is not None:
+                    if time.time() - tstart >= self.timeout:
+                        data = self._read_buffer[:]
+                        self._read_buffer.clear()
+                        return bytes(data)
             time.sleep(0.01)
 
     def readline(self, size=None):
@@ -160,6 +159,9 @@ class MockSerial:
         Read from the serial port until a newline character is found or
         until the specified size is reached. May return less than
         the requested size if a timeout is set.
+
+        The timeout applies to the entire call, not per byte
+        (matching pySerial behaviour).
 
         Parameters
         ----------
@@ -173,17 +175,31 @@ class MockSerial:
 
         """
         line = bytearray()
+        tstart = time.time()
         while True:
-            char = self.read(1)
-            if not char:
-                break
-            line.extend(char)
-            if char == b"\n":
-                break
-            if size is not None and len(line) >= size:
-                break
-        return bytes(line)
+            with self._lock:
+                idx = self._read_buffer.find(b"\n")
+                if idx >= 0:
+                    end = idx + 1
+                    if size is not None:
+                        end = min(end, size - len(line))
+                    line.extend(self._read_buffer[:end])
+                    self._read_buffer = self._read_buffer[end:]
+                    return bytes(line)
+                if len(self._read_buffer) > 0:
+                    take = len(self._read_buffer)
+                    if size is not None:
+                        take = min(take, size - len(line))
+                    line.extend(self._read_buffer[:take])
+                    self._read_buffer = self._read_buffer[take:]
+                    if size is not None and len(line) >= size:
+                        return bytes(line)
+                if self.timeout is not None:
+                    if time.time() - tstart >= self.timeout:
+                        return bytes(line)
+            time.sleep(0.01)
 
+    @property
     def in_waiting(self):
         """
         Check how many bytes are waiting to be read.
