@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyserial-mock"
-version = "0.0.1"
+version = "1.0.0"
 description = "A mock serial instance for testing purposes"
 readme = "README.md"
 license = {text = "MIT"}
