@@ -47,6 +47,7 @@ class MockSerial:
         exclusive=None,
         *,
         peer=None,
+        simulate_timing=False,
     ):
         """
         Initialize the MockSerial instance.
@@ -85,6 +86,11 @@ class MockSerial:
         peer : MockSerial, optional
             Keyword-only. The peer MockSerial instance to
             connect to.
+        simulate_timing : bool
+            Keyword-only. When True, ``flush()`` blocks
+            proportionally to pending bytes at the configured
+            baud rate, and ``write_timeout`` is enforced.
+            Default False (instant writes, no-op flush).
 
         """
         self.port = port
@@ -100,8 +106,10 @@ class MockSerial:
         self.dsrdtr = dsrdtr
         self.inter_byte_timeout = inter_byte_timeout
         self.exclusive = exclusive
+        self.simulate_timing = simulate_timing
         self._read_buffer = bytearray()
         self._lock = threading.Lock()
+        self._pending_bytes = 0
         if peer:
             self.add_peer(peer)
         else:
@@ -174,9 +182,24 @@ class MockSerial:
         self.peer = peer
         peer.peer = self
 
+    @property
+    def _bits_per_byte(self):
+        """Total bits per byte including framing."""
+        return (
+            1  # start bit
+            + self.bytesize
+            + self.stopbits
+            + (1 if self.parity != PARITY_NONE else 0)
+        )
+
     def write(self, data):
         """
         Write data to serial port.
+
+        When ``write_timeout`` is set, checks whether the
+        accumulated pending bytes would exceed the timeout at the
+        configured baud rate, and raises ``SerialTimeoutException``
+        if so.
 
         Parameters
         ----------
@@ -192,6 +215,9 @@ class MockSerial:
         -------
         SerialException
             If the serial port is not open.
+        SerialTimeoutException
+            If ``write_timeout`` is set and the simulated
+            transmit time would exceed it.
 
         """
         peer = self.peer
@@ -199,6 +225,14 @@ class MockSerial:
             raise SerialException("Serial port is not open")
         with peer._lock:
             peer._read_buffer.extend(data)
+        if self.simulate_timing:
+            self._pending_bytes += len(data)
+            if self.write_timeout is not None:
+                delay = (
+                    self._pending_bytes * self._bits_per_byte / self.baudrate
+                )
+                if delay > self.write_timeout:
+                    raise SerialTimeoutException("Write timeout")
         return len(data)
 
     def read(self, size=1):
@@ -292,9 +326,16 @@ class MockSerial:
 
     def flush(self):
         """
-        No-op for flushing the serial port.
+        Flush the serial port.
+
+        When ``simulate_timing`` is enabled, blocks for the time
+        it would take to transmit all pending bytes at the
+        configured baud rate. Otherwise this is a no-op.
         """
-        pass
+        if self.simulate_timing and self._pending_bytes > 0:
+            delay = self._pending_bytes * self._bits_per_byte / self.baudrate
+            time.sleep(delay)
+            self._pending_bytes = 0
 
     def reset_input_buffer(self):
         """
